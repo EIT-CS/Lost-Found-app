@@ -1,0 +1,108 @@
+rules_version = '2';
+
+// Lost & Found апп-ийн Firestore аюулгүй байдлын дүрэм.
+// Firebase Console -> Firestore Database -> Rules хэсэгт буулгаад "Publish" дарна.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function itemPath(itemId) {
+      return /databases/$(database)/documents/items/$(itemId);
+    }
+
+    // Хэрэглэгчийн профайл: зөвхөн өөрөө уншиж, бичнэ.
+    match /users/{uid} {
+      allow read, write: if signedIn() && request.auth.uid == uid;
+
+      // Мэдэгдэл: эзэн нь уншиж/устгана. Бусад хэрэглэгч өөрийн нэрээр мэдэгдэл үүсгэж болно
+      // (жишээ нь баталгаажуулах хариулт илгээхэд зарын эзэнд мэдэгдэх).
+      match /notifications/{notificationId} {
+        allow read, update, delete: if signedIn() && request.auth.uid == uid;
+        allow create: if signedIn()
+                      && request.resource.data.fromUid == request.auth.uid;
+      }
+    }
+
+    // Зарууд: нэвтэрсэн хэн ч уншиж, шинээр нэмнэ.
+    // Засах, устгахыг зөвхөн зар оруулсан хүн хийнэ.
+    match /items/{itemId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+                    && request.resource.data.ownerId == request.auth.uid;
+      allow update, delete: if signedIn()
+                            && resource.data.ownerId == request.auth.uid;
+
+      // Баталгаажуулах асуултад өгсөн хариулт (claim).
+      // Баримтын id нь хариулсан хүний uid.
+      match /claims/{claimUid} {
+        allow read: if signedIn()
+                    && (request.auth.uid == claimUid
+                        || get(itemPath(itemId)).data.ownerId == request.auth.uid);
+
+        allow create: if signedIn()
+                      && request.auth.uid == claimUid
+                      && request.resource.data.status == 'pending';
+
+        // Хариулсан хүн дахин оролдож болно (зөвшөөрөгдөөгүй үед л).
+        // Эзэн зөвхөн статусыг өөрчилнө.
+        allow update: if signedIn()
+                      && (
+                        (request.auth.uid == claimUid
+                          && resource.data.status != 'approved'
+                          && request.resource.data.status == 'pending')
+                        ||
+                        (get(itemPath(itemId)).data.ownerId == request.auth.uid
+                          && request.resource.data.diff(resource.data)
+                               .affectedKeys().hasOnly(['status']))
+                      );
+      }
+
+      // Нууцлагдсан утасны дугаар: эзэн болон зөвшөөрөгдсөн хүн л уншина.
+      match /private/{docId} {
+        allow read: if signedIn()
+                    && (get(itemPath(itemId)).data.ownerId == request.auth.uid
+                        || (exists(/databases/$(database)/documents/items/$(itemId)/claims/$(request.auth.uid))
+                            && get(/databases/$(database)/documents/items/$(itemId)/claims/$(request.auth.uid)).data.status == 'approved'));
+
+        // Зар болон дугаар нэг batch-ээр бичигддэг тул getAfter() ашиглана.
+        allow create, update: if signedIn()
+                              && getAfter(itemPath(itemId)).data.ownerId == request.auth.uid;
+
+        allow delete: if signedIn()
+                      && get(itemPath(itemId)).data.ownerId == request.auth.uid;
+      }
+    }
+
+    // Чат: зөвхөн оролцогч хоёр хүн.
+    match /chats/{chatId} {
+      // resource == null: чат хараахан үүсээгүй үед get() ажиллахын тулд.
+      allow read: if signedIn()
+                  && (resource == null
+                      || request.auth.uid in resource.data.participants);
+
+      allow create: if signedIn()
+                    && request.auth.uid in request.resource.data.participants
+                    && request.resource.data.participants.size() == 2;
+
+      allow update: if signedIn()
+                    && request.auth.uid in resource.data.participants
+                    && request.resource.data.participants == resource.data.participants;
+
+      match /messages/{messageId} {
+        allow read: if signedIn()
+                    && request.auth.uid in
+                       get(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+
+        // Эхний мессеж чат баримтын хамт нэг batch-ээр бичигддэг тул
+        // getAfter() ашиглан batch дууссаны дараах төлөвийг шалгана.
+        allow create: if signedIn()
+                      && request.resource.data.senderId == request.auth.uid
+                      && request.auth.uid in
+                         getAfter(/databases/$(database)/documents/chats/$(chatId)).data.participants;
+      }
+    }
+  }
+}

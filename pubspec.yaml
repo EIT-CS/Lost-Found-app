@@ -36,6 +36,19 @@ dependencies:
   cupertino_icons: ^1.0.8
   image_picker: ^1.1.2
 
+  # Firebase (утасны дугаараар нэвтрэх, Firestore өгөгдлийн сан)
+  firebase_core: ^5.2.0
+  firebase_auth: ^7.1.0
+  cloud_firestore: ^7.1.0
+
+  # Байршил (GPS) авах
+  geolocator: ^14.1.2
+
+  # Газрын зураг (OpenStreetMap) болон утас руу залгах
+  flutter_map: ^8.3.1
+  latlong2: ^0.9.1
+  url_launcher: ^6.3.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
