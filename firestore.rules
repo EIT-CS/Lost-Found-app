@@ -60,11 +60,14 @@ service cloud.firestore {
                       );
       }
 
-      // Нууцлагдсан утасны дугаар: эзэн болон зөвшөөрөгдсөн хүн л уншина.
+      // Нууц мэдээлэл: contact (утас), photos (тод зураг), secret (нууц тэмдэглэл).
+      // Зар оруулагч бүгдийг уншина. Эзэн гэдгээ баталгаажуулсан хүн
+      // зөвхөн contact, photos-ийг уншина. secret нь зөвхөн зар оруулагчид.
       match /private/{docId} {
         allow read: if signedIn()
                     && (get(itemPath(itemId)).data.ownerId == request.auth.uid
-                        || (exists(/databases/$(database)/documents/items/$(itemId)/claims/$(request.auth.uid))
+                        || (docId != 'secret'
+                            && exists(/databases/$(database)/documents/items/$(itemId)/claims/$(request.auth.uid))
                             && get(/databases/$(database)/documents/items/$(itemId)/claims/$(request.auth.uid)).data.status == 'approved'));
 
         // Зар болон дугаар нэг batch-ээр бичигддэг тул getAfter() ашиглана.
